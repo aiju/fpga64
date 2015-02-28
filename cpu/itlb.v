@@ -7,9 +7,13 @@ module itlb(
 	output wire [31:0] itlbpa,
 	input wire itlbreq,
 	output wire itlbmiss,
+	input wire itlbfill,
+	output wire itlbbusy,
 	
 	input wire [31:0] jtlbpa,
 	input wire jtlbhit
 );
+
+
 
 endmodule

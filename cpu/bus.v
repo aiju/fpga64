@@ -11,7 +11,7 @@ module bus(
 	input wire evalid,
 	output wire pvalid,
 	output wire pmaster,
-	input wire eok,
+	input wire eok
 	
 	
 	
