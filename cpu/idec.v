@@ -114,7 +114,7 @@ module idec(
 		
 		32'b000000_zzzzzzzzzz_zzzzzzzzzz_001100: rfdec = 1<<DECSYSCALL; /* SYSCALL */
 		32'b000000_zzzzzzzzzz_zzzzzzzzzz_001101: rfdec = 1<<DECBREAK; /* BREAK */
-		32'b101111_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = 1<<DECCACHE|ALUADD<<DECALU|1<<DECREGRS|1<<DECSIMM; /* CACHE */
+		32'b101111_zzzzz_zzz0z_zzzzzzzz_zzzzzzzz: rfdec = 1<<DECCACHE|ALUADD<<DECALU|1<<DECREGRS|1<<DECSIMM|rfinstr[16]<<DECDCACHE|rfinstr[20:18]<<DECCACHEOP; /* CACHE */
 		endcase
 		
 		if(rfdec[DECSETRD])

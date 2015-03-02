@@ -6,10 +6,15 @@ module pipetest();
 
 	/*AUTOWIRE*/
 	// Beginning of automatic wires (for undeclared instantiated-module outputs)
+	wire		cp0taglodcset;		// From cache0 of cache.v
+	wire [31:0]	cp0taglodcval;		// From cache0 of cache.v
 	wire		dcbusy;			// From cache0 of cache.v
 	wire		dccache;		// From pipe0 of pipe.v
 	wire [63:0]	dcdata;			// From cache0 of cache.v
+	wire		dcdbe;			// From cache0 of cache.v
+	wire		dcdoop;			// From pipe0 of pipe.v
 	wire		dcfill;			// From pipe0 of pipe.v
+	wire [2:0]	dcop;			// From pipe0 of pipe.v
 	wire [31:0]	dcpa;			// From pipe0 of pipe.v
 	wire		dcread;			// From pipe0 of pipe.v
 	wire [2:0]	dcsz;			// From pipe0 of pipe.v
@@ -45,10 +50,9 @@ module pipetest();
 	/*AUTOREGINPUT*/
 	// Beginning of automatic reg inputs (for undeclared instantiated-module inputs)
 	reg		clk;			// To pipe0 of pipe.v, ...
-	reg		dcdoop;			// To cache0 of cache.v
-	reg		dcerror;		// To pipe0 of pipe.v
-	reg [2:0]	dcop;			// To cache0 of cache.v
+	reg [31:0]	cp0taglo;		// To cache0 of cache.v
 	reg		exfpe;			// To pipe0 of pipe.v
+	reg		exterror;		// To cache0 of cache.v
 	reg [63:0]	extrdata;		// To cache0 of cache.v
 	reg		extrdy;			// To cache0 of cache.v
 	reg		extreply;		// To cache0 of cache.v
@@ -94,7 +98,7 @@ module pipetest();
 		jtlberror = 0;
 		jtlbmiss = 0;
 	end
-	always @(*) jtlbcache = !jtlbva[8];
+	//always @(*) jtlbcache = !jtlbva[8];
 	always #0.5 clk = !clk;
 	always @(posedge clk) begin
 		phi1 <= !phi1;
@@ -194,6 +198,8 @@ module pipetest();
 		   .dcwrite		(dcwrite),
 		   .dcfill		(dcfill),
 		   .dccache		(dccache),
+		   .dcdoop		(dcdoop),
+		   .dcop		(dcop[2:0]),
 		   .itlbfill		(itlbfill),
 		   .jtlbva		(jtlbva[63:0]),
 		   .jtlbreq		(jtlbreq),
@@ -212,7 +218,7 @@ module pipetest();
 		   .exfpe		(exfpe),
 		   .dcdata		(dcdata[63:0]),
 		   .dctag		(dctag[21:0]),
-		   .dcerror		(dcerror),
+		   .dcdbe		(dcdbe),
 		   .dcbusy		(dcbusy),
 		   .itlbpa		(itlbpa[31:0]),
 		   .itlbmiss		(itlbmiss),
@@ -255,6 +261,9 @@ module pipetest();
 		     .dcdata		(dcdata[63:0]),
 		     .dctag		(dctag[21:0]),
 		     .dcbusy		(dcbusy),
+		     .dcdbe		(dcdbe),
+		     .cp0taglodcval	(cp0taglodcval[31:0]),
+		     .cp0taglodcset	(cp0taglodcset),
 		     .extaddr		(extaddr[31:0]),
 		     .extwdata		(extwdata[63:0]),
 		     .extsz		(extsz[4:0]),
@@ -279,10 +288,12 @@ module pipetest();
 		     .dccache		(dccache),
 		     .dcdoop		(dcdoop),
 		     .dcop		(dcop[2:0]),
+		     .cp0taglo		(cp0taglo[31:0]),
 		     .extrdy		(extrdy),
 		     .extreply		(extreply),
 		     .extreplyto	(extreplyto),
-		     .extrdata		(extrdata[63:0]));
+		     .extrdata		(extrdata[63:0]),
+		     .exterror		(exterror));
 endmodule
 
 // Local Variables:

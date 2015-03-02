@@ -32,11 +32,13 @@ module pipe(
 	output reg [63:0] dcwdata,
 	output reg [2:0] dcsz,
 	output reg dcread,
-	output reg dcwrite,
+	output wire dcwrite,
 	output reg dcfill,
 	output reg dccache,
-	input wire dcerror,
+	input wire dcdbe,
 	input wire dcbusy,
+	output reg dcdoop,
+	output wire [2:0] dcop,
 	
 	input wire [31:0] itlbpa,
 	input wire itlbmiss,
@@ -58,13 +60,15 @@ module pipe(
 );
 `include "cpuconst.vh"
 	
-	reg stall, stall0, icmiss, exdade, dcmiss, dcovfl, icade, rfade, dcfpe, dcdade;
+	reg stall, stall0, icmiss, exdade, dcmiss, dcovfl, icade, rfade, dcfpe, dcdade, dcdbe0;
 	reg rfkill, exkill, dckill, exc0, exc1;
-	reg rfloadr0, rfloadr1, exloadr0, exloadr1, ldi, storestall, dcissued;
+	reg rfloadr0, rfloadr1, exloadr0, exloadr1, ldi, storestall, dcissued, dcdone, wbcache;
+	reg busystall;
 	reg [4:0] rfwhy, exwhy, dcwhy;
 	
+	reg [31:0] wbpa;
 	reg [63:0] gp[0:31], fp[0:31];
-	reg [63:0] rfr0, rfr1, dcalur, wbval, dcval, exbtarg, dcr1, wbr1;
+	reg [63:0] rfr0, rfr1, dcalur, wbval, dcval, exbtarg, dcr1, wbr1, dcval0;
 	reg [`DECMAX:0] dcdec, wbdec;
 	
 	wire bemem=1, becpu=1, revend=0;
@@ -72,6 +76,7 @@ module pipe(
 	wire [5:0] extargr = exdec[DECTARGR+5:DECTARGR];
 	wire [5:0] dctargr = dcdec[DECTARGR+5:DECTARGR];
 	wire [5:0] wbtargr = wbdec[DECTARGR+5:DECTARGR];
+	assign dcop = dcdec[DECCACHEOP+2:DECCACHEOP];
 	
 	always @(*) begin
 		icmiss = !itlbmiss && (!ictag[20] || itlbpa[31:12] != ictag[19:0]);
@@ -115,18 +120,20 @@ module pipe(
 			rfr0 = {59'd0, rfinstr[10:6]};
 	end
 	
+	assign dcwrite = wbdec[DECSTORE] && (!stall || storestall || busystall);
 	always @(*) begin
 		dcva = 64'bx;
 		dcpa = jtlbpa;
 		dcsz = 3'bx;
 		dcwdata = 64'bx;
 		dcread = 0;
-		dcwrite = 0;
+		dcdoop = 0;
 		dccache = jtlbcache;
 		exdade = 0;
 		if(wbdec[DECSTORE]) begin
 			dcva = wbval;
-			dcwrite = !stall || storestall;
+			dcpa = wbpa;
+			dccache = wbcache;
 			dcwdata = wbr1;
 			case(wbdec[DECSZ+3:DECSZ])
 			SZBYTE: dcsz = 0;
@@ -169,18 +176,12 @@ module pipe(
 				dcval = dcdata;
 			end
 			endcase
-			dcmiss = !jtlbmiss && (jtlbcache ? !dctag[21] || dctag[19:0] != jtlbpa[31:12] : !dcissued);
+			dcmiss = !dcissued && (!jtlbcache || !dctag[21] || dctag[19:0] != jtlbpa[31:12]);
 		end else if(dcdec[DECSTORE]) begin
 			dcva = dcalur;
 			dcpa = jtlbpa;
-			if(jtlbcache) begin
-				dcmiss = !jtlbmiss && !dctag[21] || dctag[19:0] != jtlbpa[31:12] ;
-				dcread = 1;
-			end else begin
-				dcmiss = !jtlbmiss && !dcissued;
-				dcwrite = !jtlbmiss;
-				dcwdata = dcr1;
-			end
+			dcmiss = jtlbcache && (!dctag[21] || dctag[19:0] != jtlbpa[31:12]);
+			dcread = 1;
 			jtlbreq = 1;
 			dcval = dcalur;
 			case(dcdec[DECSZ+3:DECSZ])
@@ -189,6 +190,20 @@ module pipe(
 			default: dcsz = 3;
 			SZDWORD: dcsz = 7;
 			endcase
+		end else if(dcdec[DECCACHE] && dcdec[DECDCACHE]) begin
+			dcva = dcalur;
+			dcpa = jtlbpa;
+			case(dcop)
+			0:
+				dcmiss = dctag[21];
+			3:
+				dcmiss = 1;
+			4, 5, 6:
+				dcmiss = dctag[21] && dctag[19:0] == jtlbpa[31:12];
+			endcase
+			dcdoop = 1;
+			dcread = 1;
+			jtlbreq = 1;
 		end else
 			dcval = dcalur;
 		jtlbva = dcva;
@@ -216,7 +231,13 @@ module pipe(
 				rfinstr <= rfkill || exkill || dckill ? 0 : icinstr;
 				rfade <= icade;
 			end
-
+			if((dcfill || dcread) && !dcbusy)
+				dcissued <= 1;
+			if(dcissued && !dcbusy) begin
+				dcval0 <= dcval;
+				dcdbe0 <= dcdbe;
+				dcdone <= 1;
+			end
 			if(!stall) begin
 				exinstr <= rfinstr;
 				exdec <= exdec[DECLIKELY] && !exbcmp || exkill || dckill ? 0 : rfdec;
@@ -240,14 +261,17 @@ module pipe(
 				dcdade <= dckill ? 0 : exdade;
 				dcr1 <= exr1;
 				dcissued <= 0;
+				dcdone <= 0;
 
 				wbdec <= dcdec;
 				if(dckill) begin
 					wbdec[DECPANIC] <= 1;
 					wbdec[DECWHY+4:DECWHY] <= dcwhy;
 				end
-				wbval <= dcval;
+				wbval <= dcdone ? dcval0 : dcval;
 				wbr1 <= dcr1;
+				wbpa <= jtlbpa;
+				wbcache <= jtlbcache;
 			end
 			if(ldi) begin
 				if(exloadr0)
@@ -259,8 +283,6 @@ module pipe(
 			end
 			if(storestall)
 				wbdec[DECSTORE] <= 0;
-			if(dcfill)
-				dcissued <= 1;
 			stall0 <= stall;
 		end
 	
@@ -286,6 +308,7 @@ module pipe(
 		dckill = 0;
 		ldi = 0;
 		storestall = 0;
+		busystall = 0;
 		dcwhy = 5'bx;
 		exwhy = 5'bx;
 		rfwhy = 5'bx;
@@ -299,11 +322,12 @@ module pipe(
 		dcfpe: begin dckill = 1; dcwhy = WHYFPE; end
 		dcdade: begin dckill = 1; dcwhy = WHYDADE; end
 		!itlbbusy && (jtlbmiss || jtlberror): begin dckill = 1; dcwhy = WHYDTLB; end
-		wbdec[DECSTORE] && (dcdec[DECSTORE] || dcdec[DECLOAD]): begin stall = 1; storestall = 1; end
 		irq && irqen && !stall0: begin dckill = 1; dcwhy = WHYINTR; end
-		dcbusy: stall = 1;
+		dcbusy && wbdec[DECSTORE]: begin stall = 1; busystall = 1; end
+		wbdec[DECSTORE] && (dcdec[DECSTORE] || dcdec[DECLOAD]): begin stall = 1; storestall = 1; end
+		dcbusy && (dcread || dcfill) && !dcdone: stall = 1;
 		dcmiss: begin dcfill = 1; stall = 1; end
-		dcerror && dcread: begin dckill = 1; dcwhy = WHYDBE; end
+		dcdone ? dcdbe0 : dcdbe: begin dckill = 1; dcwhy = WHYDBE; end
 		
 		exdec[DECINVALID]: begin exkill = 1; exwhy = WHYRSVD; end
 		exdec[DECSYSCALL]: begin exkill = 1; exwhy = WHYSYSC; end

@@ -26,32 +26,49 @@ module cache(
 	input wire dcdoop,
 	input wire [2:0] dcop,
 	output reg dcbusy,
+	output reg dcdbe,
 	
-	output reg [31:0] extaddr,
+	input wire [31:0] cp0taglo,
+	output wire [31:0] cp0taglodcval,
+	output reg cp0taglodcset,
+	
+	output wire [31:0] extaddr,
 	output reg [63:0] extwdata,
-	output reg [4:0] extsz,
-	output reg extreq,
-	output reg extwr,
-	output reg extsrc,
+	output wire [4:0] extsz,
+	output wire extreq,
+	output wire extwr,
+	output wire extsrc,
 	input wire extrdy,
 	input wire extreply,
 	input wire extreplyto,
-	input wire [63:0] extrdata
+	input wire [63:0] extrdata,
+	input wire exterror
 );
 
 `include "cpuconst.vh"
 
 	reg [31:0] dcextaddr, icextaddr;
 	reg [4:0] dcextsz, icextsz;
-	reg dcextreq, icextreq, dcextrdy, icextrdy;
+	reg dcextreq, icextreq;
 	reg dcextwr;
 
+	wire dcextrdy = extrdy;
+	wire icextrdy = extrdy && !dcextreq;
+	assign extsrc = dcextreq;
+	assign extaddr = extsrc ? dcextaddr : icextaddr;
+	assign extsz = extsrc ? dcextsz : icextsz;
+	assign extwr = extsrc && dcextwr;
+	assign extreq = extsrc ? dcextreq : icextreq;
+
+	reg [63:0] dcva0, dcwdata0;
+	reg [31:0] dcpa0;
+	reg [2:0] dcsz0;
 	reg [63:0] ddata[0:1023], idata[0:2047];
 	reg [21:0] dtag[0:511];
 	reg [20:0] itag[0:511];
 	reg dcload, dchalf, icload;
 	reg [1:0] icctr;
-	reg clricctr, incicctr;
+	reg clricctr, incicctr, dcloadreq, dcinval, dcdirtyex, dcloadtag;
 	
 	reg [3:0] dcstate, dcstate_;
 	localparam DCIDLE = 0;
@@ -81,17 +98,23 @@ module cache(
 	
 	always @(*) begin
 		case(dcstate)
-		DCRECVU:
-			dcdata = extrdata >> ((7 - dcsz - dcva[2:0]) * 8);
+		DCRECVU, DCRECV:
+			dcdata = extrdata >> (7 - dcsz - dcva[2:0]) * 8;
 		DCWRITE, DCWRITE2:
 			dcdata = ddata[{dcva[12:4], dcstate == DCWRITE2}];
 		default:
-			dcdata = ddata[dcva[12:3]] >> ((7 - dcsz - dcva[2:0]) * 8);
+			dcdata = ddata[dcva[12:3]] >> (7 - dcsz - dcva[2:0]) * 8;
 		endcase
-		dctag = dtag[dcva[12:4]];
+		case(dcstate)
+		DCRECV:
+			dctag = {2'b10, dcpa[31:12]};
+		default:
+			dctag = dtag[dcva[12:4]];
+		endcase
 		icinstr = pc[2] ? idata[pc[13:3]][31:0] : idata[pc[13:3]][63:32];
 		ictag = itag[pc[13:5]];
 	end
+	assign cp0taglodcval = {4'd0, dctag[19:0], {2{dctag[21]}}, 6'd0};
 	
 	reg [5:0] pos;
 	always @(posedge clk) begin
@@ -100,6 +123,10 @@ module cache(
 				ddata[{dcva[12:4], dchalf}] <= extrdata;
 				dtag[dcva[12:4]] <= {2'b10, dcpa[31:12]};
 			end
+			if(dcinval)
+				dtag[dcva[12:4]][20] <= 0;
+			if(dcdirtyex)
+				dtag[dcva[12:4]] <= {2'b11, dcpa[31:12]};
 			if(dcwrite && dccache) begin
 				pos = {dcva[2:0], 3'b000};
 				case(dcsz)
@@ -122,20 +149,16 @@ module cache(
 				icctr <= 0;
 			if(incicctr)
 				icctr <= icctr + 1;
+			if(dcloadreq) begin
+				dcva0 <= dcva;
+				dcpa0 <= dcpa;
+				dcsz0 <= dcsz;
+			end
+			if(dcloadtag)
+				dtag[dcva[12:4]] <= {cp0taglo[7:6], cp0taglo[27:8]};
 			dcstate <= dcstate_;
 			icstate <= icstate_;
 		end
-	end
-
-	
-	always @(*) begin
-		dcextrdy = extrdy;
-		icextrdy = extrdy && !dcextreq;
-		extsrc = dcextreq;
-		extaddr = extsrc ? dcextaddr : icextaddr;
-		extsz = extsrc ? dcextsz : icextsz;
-		extwr = extsrc && dcextwr;
-		extreq = extsrc ? dcextreq : icextreq;
 	end
 	
 	always @(*) begin
@@ -148,16 +171,59 @@ module cache(
 		dcload = 0;
 		dcbusy = 1;
 		dchalf = 1'bx;
+		dcdirtyex = 0;
+		dcloadreq = 0;
+		dcloadtag = 0;
+		dcdbe = 0;
+		cp0taglodcset = 0;
 		case(dcstate)
 		DCIDLE: begin
 			dcbusy = 0;
-			if(dcfill)
+			dcloadreq = 1;
+			if(dcdoop)
+				case(dcop)
+				0: begin
+					if(dcfill)
+						dcstate_ = DCWRITE;
+					dcinval = 1;
+				end
+				1:
+					dcloadtag = 1;
+				2:
+					cp0taglodcset = 1;
+				3:
+					if(dcfill)
+						if(dctag == {2'b11, dcpa[31:12]})
+							dcstate_ = DCWRITE;
+						else
+							dcdirtyex = 1;
+				4:
+					if(dcfill)
+						dcinval = 1;
+				5:
+					if(dcfill) begin
+						dcinval = 1;
+						if(dctag[20])
+							dcstate_ = DCWRITE;
+					end
+				6:
+					if(dcfill)
+						dcstate_ = DCWRITE;
+				endcase
+			else if(dcfill)
 				if(dccache)
 					dcstate_ = DCREAD;
-				else if(dcwrite)
-					dcstate_ = DCWRITEU;
 				else
 					dcstate_ = DCREADU;
+			else if(dcwrite && !dccache) begin
+				dcextaddr = dcpa;
+				dcextsz = {2'b00, dcsz};
+				dcextreq = 1;
+				dcextwr = 1;
+				extwdata = dcwdata;
+				if(!dcextrdy)
+					dcstate_ = DCWRITEU;
+			end
 		end
 		DCREAD: begin
 			dcextaddr = dcpa & ~7;
@@ -171,6 +237,7 @@ module cache(
 		end
 		DCWRITE: begin
 			dcextaddr = {dctag[19:0], dcva[11:4], 4'd0};
+			dcextwr = 1;
 			dcextsz = 15;
 			dcextreq = 1;
 			extwdata = dcdata;
@@ -180,23 +247,32 @@ module cache(
 		DCWRITE2: begin
 			extwdata = dcdata;
 			dcextreq = 1;
-			dcstate_ = DCRECV;
+			dcextwr = 1;
+			if(dcextrdy)
+				if(dcdoop) begin
+					if(dcop == 3)
+						dcdirtyex = 1;
+					dcstate_ = DCIDLE;
+				end else
+					dcstate_ = DCRECV;
 		end
 		DCRECV:
 			if(extreply && extreplyto) begin
+				dcdbe = exterror;
+				dcbusy = 0;
 				dcload = 1;
-				dchalf = dcva[3];
+				dchalf = dcva0[3];
 				dcstate_ = DCRECV2;
 			end
 		DCRECV2:
 			if(extreply && extreplyto) begin
 				dcload = 1;
-				dchalf = !dcva[3];
+				dchalf = !dcva0[3];
 				dcstate_ = DCIDLE;
 			end
 		DCREADU: begin
-			dcextaddr = dcpa;
-			dcextsz = dcsz;
+			dcextaddr = dcpa0;
+			dcextsz = {2'b00, dcsz0};
 			dcextreq = 1;
 			if(dcextrdy)
 				dcstate_ = DCRECVU;
@@ -204,13 +280,15 @@ module cache(
 		DCRECVU:
 			if(extreply && extreplyto) begin
 				dcbusy = 0;
+				dcdbe = exterror;
 				dcstate_ = DCIDLE;
 			end
 		DCWRITEU: begin
-			dcextaddr = dcpa;
-			dcextsz = dcsz;
+			dcextaddr = dcpa0;
+			dcextsz = {2'b00, dcsz0};
 			dcextreq = 1;
-			extwdata = dcwdata;
+			dcextwr = 1;
+			extwdata = dcwdata0;
 			if(dcextrdy) begin
 				dcbusy = 0;
 				dcstate_ = DCIDLE;
