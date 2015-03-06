@@ -143,7 +143,7 @@ module cache(
 			end
 			if(icload) begin
 				idata[{pc[13:5], icctr}] <= extrdata;
-				itag[pc[13:5]] <= {1'b1, dcpa[31:12]};
+				itag[pc[13:5]] <= {1'b1, itlbpa[31:12]};
 			end
 			if(clricctr)
 				icctr <= 0;

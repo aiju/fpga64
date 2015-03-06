@@ -1,0 +1,16 @@
+`define O(OP,RB,RT,IMM) ((OP)<<26|(RB)<<21|(RT)<<16|(IMM)&65535)
+`define S(OP,RS,RT,RD) ((RS)<<21|(RT)<<16|(RD)<<11|(OP))
+`define I(OP,RS,IMM) (1<<26|(RS)<<21|(OP)<<16|(IMM)&65535)
+`define H(n) mem[n][63:32]
+`define L(n) mem[n][31:0]
+`define ADDI(RB,IMM,RT) `O('o10,RB,RT,IMM)
+`define BEQ(RS,RT,IMM) `O('o04,RS,RT,IMM)
+`define BNE(RS,RT,IMM) `O('o05,RS,RT,IMM)
+`define LWL(RB,IMM,RT) `O('o42,RB,RT,IMM)
+`define LWR(RB,IMM,RT) `O('o46,RB,RT,IMM)
+`define SWL(RB,IMM,RT) `O('o52,RB,RT,IMM)
+`define SWR(RB,IMM,RT) `O('o56,RB,RT,IMM)
+`define SUBU(RS,RT,RD) `S('o43,RS,RT,RD)
+`define BGEZAL(RS,IMM) `I('o21,RS,IMM)
+`define JR(RS) `S('o10,RS,0,0)
+`define LW(RB,IMM,RT) `O('o43,RB,RT,IMM)

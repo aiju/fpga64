@@ -8,7 +8,7 @@ module idec(
 );
 `include "cpuconst.vh"
 
-	localparam [`DECMAX:0] LOADINSTR = ALUADD<<DECALU|1<<DECREGRS|1<<DECSIMM|1<<DECSETRT|1<<DECLOAD;
+	localparam [`DECMAX:0] LOADINSTR = ALUADDIMM<<DECALU|1<<DECREGRS|1<<DECSETRT|1<<DECLOAD;
 	localparam [`DECMAX:0] STOREINSTR = ALUADDIMM<<DECALU|1<<DECREGRS|1<<DECREGRT|1<<DECSTORE;
 
 	always @(*) begin
@@ -66,16 +66,16 @@ module idec(
 		32'b100100_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZBYTE<<DECSZ; /* LBU */
 		32'b110111_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZDWORD<<DECSZ; /* LD */
 		32'b110101_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR&~(1<<DECSETRT)|1<<DECSETFT|SZDWORD<<DECSZ; /* LDC1 */
-		32'b011010_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZDLEFT<<DECSZ; /* LDL */
-		32'b011011_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZDRIGHT<<DECSZ; /* LDR */
+		32'b011010_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|1<<DECREGRT|SZDLEFT<<DECSZ; /* LDL */
+		32'b011011_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|1<<DECREGRT|SZDRIGHT<<DECSZ; /* LDR */
 		32'b100001_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZHALF<<DECSZ|1<<DECSIGNED; /* LH */
 		32'b100101_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZHALF<<DECSZ; /* LHU */
 		32'b110000_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZWORD<<DECSZ|1<<DECLLSC; /* LL */
 		32'b110100_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZDWORD<<DECSZ|1<<DECLLSC; /* LLD */
 		32'b100011_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZWORD<<DECSZ|1<<DECSIGNED; /* LW */
 		32'b110001_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR&~(1<<DECSETRT)|1<<DECSETFT|SZWORD<<DECSZ; /* LWC1 */
-		32'b100010_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZDLEFT<<DECSZ; /* LDL */
-		32'b100110_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZDRIGHT<<DECSZ; /* LDR */
+		32'b100010_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|1<<DECREGRT|SZLEFT<<DECSZ; /* LWL */
+		32'b100110_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|1<<DECREGRT|SZRIGHT<<DECSZ; /* LWR */
 		32'b100111_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = LOADINSTR|SZWORD<<DECSZ; /* LWU */
 		
 		32'b101000_zzzzz_zzzzz_zzzzzzzz_zzzzzzzz: rfdec = STOREINSTR|SZBYTE<<DECSZ; /* SB */
@@ -115,6 +115,7 @@ module idec(
 		32'b000000_zzzzzzzzzz_zzzzzzzzzz_001100: rfdec = 1<<DECSYSCALL; /* SYSCALL */
 		32'b000000_zzzzzzzzzz_zzzzzzzzzz_001101: rfdec = 1<<DECBREAK; /* BREAK */
 		32'b101111_zzzzz_zzz0z_zzzzzzzz_zzzzzzzz: rfdec = 1<<DECCACHE|ALUADD<<DECALU|1<<DECREGRS|1<<DECSIMM|rfinstr[16]<<DECDCACHE|rfinstr[20:18]<<DECCACHEOP; /* CACHE */
+		32'b010000_1000000000_0000000000_011000: rfdec = 1<<DECBRANCH|1<<DECERET; /* ERET */
 		endcase
 		
 		if(rfdec[DECSETRD])

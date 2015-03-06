@@ -3,11 +3,31 @@
 module pipetest();
 
 `include "cpuconst.vh"
+`include "asm.vh"
 
 	/*AUTOWIRE*/
 	// Beginning of automatic wires (for undeclared instantiated-module outputs)
+	wire [31:0]	cp0cause;		// From cp0 of cp0.v
+	wire		cp0coldreset;		// From pipe0 of pipe.v
+	wire [31:0]	cp0config;		// From cp0 of cp0.v
+	wire [63:0]	cp0epc;			// From cp0 of cp0.v
+	wire		cp0eret;		// From pipe0 of pipe.v
+	wire [63:0]	cp0errorepc;		// From cp0 of cp0.v
+	wire [4:0]	cp0raddr;		// From pipe0 of pipe.v
+	wire [4:0]	cp0random;		// From cp0 of cp0.v
+	wire [63:0]	cp0rdata;		// From cp0 of cp0.v
+	wire [65:0]	cp0setepc;		// From pipe0 of pipe.v
+	wire [5:0]	cp0setexccode;		// From pipe0 of pipe.v
+	wire		cp0setexl;		// From pipe0 of pipe.v
+	wire		cp0softreset;		// From pipe0 of pipe.v
+	wire [31:0]	cp0status;		// From cp0 of cp0.v
+	wire [31:0]	cp0taglo;		// From cp0 of cp0.v
 	wire		cp0taglodcset;		// From cache0 of cache.v
 	wire [31:0]	cp0taglodcval;		// From cache0 of cache.v
+	wire [4:0]	cp0waddr;		// From pipe0 of pipe.v
+	wire [63:0]	cp0wdata;		// From pipe0 of pipe.v
+	wire [4:0]	cp0wired;		// From cp0 of cp0.v
+	wire		cp0write;		// From pipe0 of pipe.v
 	wire		dcbusy;			// From cache0 of cache.v
 	wire		dccache;		// From pipe0 of pipe.v
 	wire [63:0]	dcdata;			// From cache0 of cache.v
@@ -50,7 +70,6 @@ module pipetest();
 	/*AUTOREGINPUT*/
 	// Beginning of automatic reg inputs (for undeclared instantiated-module inputs)
 	reg		clk;			// To pipe0 of pipe.v, ...
-	reg [31:0]	cp0taglo;		// To cache0 of cache.v
 	reg		exfpe;			// To pipe0 of pipe.v
 	reg		exterror;		// To cache0 of cache.v
 	reg [63:0]	extrdata;		// To cache0 of cache.v
@@ -78,12 +97,14 @@ module pipetest();
 	reg [63:0] mem[0:4095];
 	integer i;
 	initial begin
+
 		for(i = 0; i < 4096; i=i+1)
 			mem[i] = 0;
-		mem[0] = 64'h200801008D090004;
-		mem[1] = 64'h21290001ad090004;
-		mem[2] = 64'h8d0a000400000000;
+	//	`H(0) = `LW(0,3,1);
+		`H(0) = `BEQ(0,0,15);
+		`H(8) = `LW(0,3,1);
 		mem[32] = 64'hDEADBEEFCAFEBABE;
+		mem[48] = 64'h4200001800000000;
 	
 		clk = 1;
 		phi1 = 1;
@@ -120,7 +141,7 @@ module pipetest();
 		if(phi2) begin
 			extstate <= extstate_;
 			if(loadaddr) begin
-				addrreg <= extaddr >> 3;
+				addrreg <= extaddr >> 3 & 4095;
 				src <= extsrc;
 			end
 		end
@@ -203,6 +224,16 @@ module pipetest();
 		   .itlbfill		(itlbfill),
 		   .jtlbva		(jtlbva[63:0]),
 		   .jtlbreq		(jtlbreq),
+		   .cp0raddr		(cp0raddr[4:0]),
+		   .cp0waddr		(cp0waddr[4:0]),
+		   .cp0wdata		(cp0wdata[63:0]),
+		   .cp0write		(cp0write),
+		   .cp0setexl		(cp0setexl),
+		   .cp0setexccode	(cp0setexccode[5:0]),
+		   .cp0setepc		(cp0setepc[65:0]),
+		   .cp0coldreset	(cp0coldreset),
+		   .cp0softreset	(cp0softreset),
+		   .cp0eret		(cp0eret),
 		   // Inputs
 		   .clk			(clk),
 		   .phi1		(phi1),
@@ -231,7 +262,11 @@ module pipetest();
 		   .reset		(reset),
 		   .nmi			(nmi),
 		   .irq			(irq),
-		   .irqen		(irqen));
+		   .irqen		(irqen),
+		   .cp0rdata		(cp0rdata[63:0]),
+		   .cp0status		(cp0status[31:0]),
+		   .cp0epc		(cp0epc[63:0]),
+		   .cp0errorepc		(cp0errorepc[63:0]));
 
 	idec idec0(/*AUTOINST*/
 		   // Outputs
@@ -294,6 +329,34 @@ module pipetest();
 		     .extreplyto	(extreplyto),
 		     .extrdata		(extrdata[63:0]),
 		     .exterror		(exterror));
+
+	cp0 cp0(/*AUTOINST*/
+		// Outputs
+		.cp0rdata		(cp0rdata[63:0]),
+		.cp0status		(cp0status[31:0]),
+		.cp0config		(cp0config[31:0]),
+		.cp0cause		(cp0cause[31:0]),
+		.cp0epc			(cp0epc[63:0]),
+		.cp0errorepc		(cp0errorepc[63:0]),
+		.cp0taglo		(cp0taglo[31:0]),
+		.cp0random		(cp0random[4:0]),
+		.cp0wired		(cp0wired[4:0]),
+		// Inputs
+		.clk			(clk),
+		.phi1			(phi1),
+		.phi2			(phi2),
+		.cp0raddr		(cp0raddr[4:0]),
+		.cp0waddr		(cp0waddr[4:0]),
+		.cp0wdata		(cp0wdata[63:0]),
+		.cp0write		(cp0write),
+		.cp0setexl		(cp0setexl),
+		.cp0setexccode		(cp0setexccode[5:0]),
+		.cp0setepc		(cp0setepc[65:0]),
+		.cp0coldreset		(cp0coldreset),
+		.cp0softreset		(cp0softreset),
+		.cp0eret		(cp0eret),
+		.cp0taglodcval		(cp0taglodcval[31:0]),
+		.cp0taglodcset		(cp0taglodcset));
 endmodule
 
 // Local Variables:

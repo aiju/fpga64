@@ -70,8 +70,9 @@ module alu(
 	
 	always @(*) begin
 		case(exdec[DECCOND+2:DECCOND])
+		CONDAL: exbcmp = 1;
 		CONDEQ: exbcmp = exr0 == exr1;
-		CONDNE: exbcmp = exr1 != exr1;
+		CONDNE: exbcmp = exr0 != exr1;
 		CONDGE: exbcmp = !exr0[63];
 		CONDGT: exbcmp = !exr0[63] && exr0 != 0;
 		CONDLT: exbcmp = exr0[63];
