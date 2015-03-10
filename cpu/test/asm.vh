@@ -3,6 +3,7 @@
 `define I(OP,RS,IMM) (1<<26|(RS)<<21|(OP)<<16|(IMM)&65535)
 `define H(n) mem[n][63:32]
 `define L(n) mem[n][31:0]
+`define A(n) mem[n/8][(4 ^ n & 4) << 3 +: 32]
 `define ADDI(RB,IMM,RT) `O('o10,RB,RT,IMM)
 `define BEQ(RS,RT,IMM) `O('o04,RS,RT,IMM)
 `define BNE(RS,RT,IMM) `O('o05,RS,RT,IMM)
@@ -14,3 +15,9 @@
 `define BGEZAL(RS,IMM) `I('o21,RS,IMM)
 `define JR(RS) `S('o10,RS,0,0)
 `define LW(RB,IMM,RT) `O('o43,RB,RT,IMM)
+`define LD(RB,IMM,RT) `O('o67,RB,RT,IMM)
+`define LUI(RT,IMM) `O('o17,0,RT,IMM)
+`define MULT(RS,RT) `S('o30,RS,RT,0)
+`define MULTU(RS,RT) `S('o31,RS,RT,0)
+`define DMULT(RS,RT) `S('o34,RS,RT,0)
+`define DMULTU(RS,RT) `S('o35,RS,RT,0)

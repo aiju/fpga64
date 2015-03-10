@@ -116,6 +116,13 @@ module idec(
 		32'b000000_zzzzzzzzzz_zzzzzzzzzz_001101: rfdec = 1<<DECBREAK; /* BREAK */
 		32'b101111_zzzzz_zzz0z_zzzzzzzz_zzzzzzzz: rfdec = 1<<DECCACHE|ALUADD<<DECALU|1<<DECREGRS|1<<DECSIMM|rfinstr[16]<<DECDCACHE|rfinstr[20:18]<<DECCACHEOP; /* CACHE */
 		32'b010000_1000000000_0000000000_011000: rfdec = 1<<DECBRANCH|1<<DECERET; /* ERET */
+		32'b010000_1000000000_0000000000_000001: rfdec = 1<<DECTLBR; /* TLBR */
+		32'b010000_1000000000_0000000000_000010: rfdec = 1<<DECTLBWI; /* TLBWI */
+		32'b010000_1000000000_0000000000_000110: rfdec = 1<<DECTLBWR; /* TLBWR */
+		32'b010000_1000000000_0000000000_001000: rfdec = 1<<DECTLBP; /* TLBP */
+		
+		32'b000000_0000000000_zzzzz_00000_010010: rfdec = ALUMFLO<<DECALU|1<<DECSETRD; /* MFLO */
+		32'b000000_0000000000_zzzzz_00000_010000: rfdec = ALUMFHI<<DECALU|1<<DECSETRD; /* MFHI */
 		endcase
 		
 		if(rfdec[DECSETRD])
@@ -124,6 +131,9 @@ module idec(
 			rfdec[DECTARGR+5:DECTARGR] = {1'b0, rfinstr[20:16]};
 		else if(rfdec[DECLINK])
 			rfdec[DECTARGR+5:DECTARGR] = 31;
+		
+		if(rfdec[DECALU+4:DECALU] == ALUMUL || rfdec[DECALU+4:DECALU] == ALUDIV)
+			rfdec[DECLONGALU] = 1;
 	end
 
 endmodule

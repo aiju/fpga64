@@ -7,15 +7,31 @@ module pipetest();
 
 	/*AUTOWIRE*/
 	// Beginning of automatic wires (for undeclared instantiated-module outputs)
+	wire		alubusy;		// From alu0 of alu.v
+	wire		alugo;			// From pipe0 of pipe.v
 	wire [31:0]	cp0cause;		// From cp0 of cp0.v
 	wire		cp0coldreset;		// From pipe0 of pipe.v
 	wire [31:0]	cp0config;		// From cp0 of cp0.v
+	wire [63:0]	cp0entryhi;		// From cp0 of cp0.v
+	wire [63:0]	cp0entryhi_;		// From jtlb0 of jtlb.v
+	wire [63:0]	cp0entrylo0;		// From cp0 of cp0.v
+	wire [63:0]	cp0entrylo0_;		// From jtlb0 of jtlb.v
+	wire [63:0]	cp0entrylo1;		// From cp0 of cp0.v
+	wire [63:0]	cp0entrylo1_;		// From jtlb0 of jtlb.v
 	wire [63:0]	cp0epc;			// From cp0 of cp0.v
 	wire		cp0eret;		// From pipe0 of pipe.v
 	wire [63:0]	cp0errorepc;		// From cp0 of cp0.v
+	wire [31:0]	cp0index;		// From cp0 of cp0.v
+	wire [31:0]	cp0index_;		// From jtlb0 of jtlb.v
+	wire		cp0jtlbshut;		// From jtlb0 of jtlb.v
+	wire [31:0]	cp0pagemask;		// From cp0 of cp0.v
+	wire [31:0]	cp0pagemask_;		// From jtlb0 of jtlb.v
 	wire [4:0]	cp0raddr;		// From pipe0 of pipe.v
 	wire [4:0]	cp0random;		// From cp0 of cp0.v
 	wire [63:0]	cp0rdata;		// From cp0 of cp0.v
+	wire		cp0setbadva;		// From pipe0 of pipe.v
+	wire		cp0setcontext;		// From pipe0 of pipe.v
+	wire		cp0setentryhi;		// From jtlb0 of jtlb.v
 	wire [65:0]	cp0setepc;		// From pipe0 of pipe.v
 	wire [5:0]	cp0setexccode;		// From pipe0 of pipe.v
 	wire		cp0setexl;		// From pipe0 of pipe.v
@@ -26,7 +42,6 @@ module pipetest();
 	wire [31:0]	cp0taglodcval;		// From cache0 of cache.v
 	wire [4:0]	cp0waddr;		// From pipe0 of pipe.v
 	wire [63:0]	cp0wdata;		// From pipe0 of pipe.v
-	wire [4:0]	cp0wired;		// From cp0 of cp0.v
 	wire		cp0write;		// From pipe0 of pipe.v
 	wire		dcbusy;			// From cache0 of cache.v
 	wire		dccache;		// From pipe0 of pipe.v
@@ -56,16 +71,36 @@ module pipetest();
 	wire [4:0]	extsz;			// From cache0 of cache.v
 	wire [63:0]	extwdata;		// From cache0 of cache.v
 	wire		extwr;			// From cache0 of cache.v
+	wire [63:0]	hi;			// From alu0 of alu.v
 	wire		icbusy;			// From cache0 of cache.v
 	wire		icfill;			// From pipe0 of pipe.v
 	wire [31:0]	icinstr;		// From cache0 of cache.v
 	wire [20:0]	ictag;			// From cache0 of cache.v
+	wire		itlbbusy;		// From itlb0 of itlb.v
+	wire		itlbcache;		// From itlb0 of itlb.v
 	wire		itlbfill;		// From pipe0 of pipe.v
+	wire		itlbmiss;		// From itlb0 of itlb.v
+	wire [31:0]	itlbpa;			// From itlb0 of itlb.v
+	wire		jtlbade;		// From jtlb0 of jtlb.v
+	wire		jtlbcache;		// From jtlb0 of jtlb.v
+	wire		jtlbinval;		// From jtlb0 of jtlb.v
+	wire		jtlbmiss;		// From jtlb0 of jtlb.v
+	wire		jtlbmod;		// From jtlb0 of jtlb.v
+	wire [31:0]	jtlbpa;			// From jtlb0 of jtlb.v
 	wire		jtlbreq;		// From pipe0 of pipe.v
 	wire [63:0]	jtlbva;			// From pipe0 of pipe.v
+	wire		jtlbwr;			// From pipe0 of pipe.v
+	wire [63:0]	lo;			// From alu0 of alu.v
+	wire [1:0]	mode;			// From pipe0 of pipe.v
+	wire		mode64;			// From pipe0 of pipe.v
 	wire [63:0]	pc;			// From pipe0 of pipe.v
 	wire [`DECMAX:0] rfdec;			// From idec0 of idec.v
 	wire [31:0]	rfinstr;		// From pipe0 of pipe.v
+	wire		stall;			// From pipe0 of pipe.v
+	wire		tlbp;			// From pipe0 of pipe.v
+	wire		tlbr;			// From pipe0 of pipe.v
+	wire		tlbwi;			// From pipe0 of pipe.v
+	wire		tlbwr;			// From pipe0 of pipe.v
 	// End of automatics
 	/*AUTOREGINPUT*/
 	// Beginning of automatic reg inputs (for undeclared instantiated-module inputs)
@@ -77,17 +112,9 @@ module pipetest();
 	reg		extreply;		// To cache0 of cache.v
 	reg		extreplyto;		// To cache0 of cache.v
 	reg		icerror;		// To pipe0 of pipe.v
-	reg		icreq;			// To cache0 of cache.v
 	reg		irq;			// To pipe0 of pipe.v
 	reg		irqen;			// To pipe0 of pipe.v
-	reg		itlbbusy;		// To pipe0 of pipe.v
-	reg		itlbmiss;		// To pipe0 of pipe.v
-	reg [31:0]	itlbpa;			// To pipe0 of pipe.v, ...
-	reg		jtlbcache;		// To pipe0 of pipe.v
-	reg		jtlbdirty;		// To pipe0 of pipe.v
-	reg		jtlberror;		// To pipe0 of pipe.v
-	reg		jtlbmiss;		// To pipe0 of pipe.v
-	reg [31:0]	jtlbpa;			// To pipe0 of pipe.v
+	reg		itlbreq;		// To itlb0 of itlb.v
 	reg		nmi;			// To pipe0 of pipe.v
 	reg		phi1;			// To pipe0 of pipe.v, ...
 	reg		phi2;			// To pipe0 of pipe.v, ...
@@ -100,26 +127,27 @@ module pipetest();
 
 		for(i = 0; i < 4096; i=i+1)
 			mem[i] = 0;
-	//	`H(0) = `LW(0,3,1);
-		`H(0) = `BEQ(0,0,15);
-		`H(8) = `LW(0,3,1);
-		mem[32] = 64'hDEADBEEFCAFEBABE;
-		mem[48] = 64'h4200001800000000;
+		`A(0) = `LUI(1,16'h8000);
+		`A(4) = `ADDI(1,16'h10,1);
+		`A(8) = `JR(1);
+		`A(16) = `LD(1,16'h30,2);
+		`A(20) = `LD(1,16'h38,3);
+		`A(24) = `DMULTU(2,3);
+		`A(28) = `BEQ(0,0,-1);
+		`A(64) = 32'hDEADBEEF;
+		`A(68) = 32'hCAFEBABE;
+		`A(72) = 32'h12345678;
+		//`A(76) = 32'h9ABCDEF0;
 	
 		clk = 1;
 		phi1 = 1;
+		reset = 1;
 		phi2 = 0;
 		exfpe = 0;
 		irq = 0;
 		irqen = 0;
-		itlbbusy = 0;
-		itlbmiss = 0;
-		jtlbcache = 1;
-		jtlbdirty = 0;
-		jtlberror = 0;
-		jtlbmiss = 0;
+		#4 reset = 0;
 	end
-	//always @(*) jtlbcache = !jtlbva[8];
 	always #0.5 clk = !clk;
 	always @(posedge clk) begin
 		phi1 <= !phi1;
@@ -145,11 +173,6 @@ module pipetest();
 				src <= extsrc;
 			end
 		end
-		
-	always @(*) begin
-		jtlbpa = jtlbva;
-		itlbpa = pc;
-	end
 	
 	always @(*) begin
 		extrdy = 0;
@@ -203,6 +226,7 @@ module pipetest();
 	
 	pipe pipe0(/*AUTOINST*/
 		   // Outputs
+		   .stall		(stall),
 		   .pc			(pc[63:0]),
 		   .icfill		(icfill),
 		   .rfinstr		(rfinstr[31:0]),
@@ -211,6 +235,7 @@ module pipetest();
 		   .exlink		(exlink[63:0]),
 		   .exr0		(exr0[63:0]),
 		   .exr1		(exr1[63:0]),
+		   .alugo		(alugo),
 		   .dcva		(dcva[63:0]),
 		   .dcpa		(dcpa[31:0]),
 		   .dcwdata		(dcwdata[63:0]),
@@ -224,6 +249,11 @@ module pipetest();
 		   .itlbfill		(itlbfill),
 		   .jtlbva		(jtlbva[63:0]),
 		   .jtlbreq		(jtlbreq),
+		   .jtlbwr		(jtlbwr),
+		   .tlbp		(tlbp),
+		   .tlbr		(tlbr),
+		   .tlbwi		(tlbwi),
+		   .tlbwr		(tlbwr),
 		   .cp0raddr		(cp0raddr[4:0]),
 		   .cp0waddr		(cp0waddr[4:0]),
 		   .cp0wdata		(cp0wdata[63:0]),
@@ -234,6 +264,10 @@ module pipetest();
 		   .cp0coldreset	(cp0coldreset),
 		   .cp0softreset	(cp0softreset),
 		   .cp0eret		(cp0eret),
+		   .cp0setbadva		(cp0setbadva),
+		   .cp0setcontext	(cp0setcontext),
+		   .mode		(mode[1:0]),
+		   .mode64		(mode64),
 		   // Inputs
 		   .clk			(clk),
 		   .phi1		(phi1),
@@ -247,6 +281,7 @@ module pipetest();
 		   .exovfl		(exovfl),
 		   .exbcmp		(exbcmp),
 		   .exfpe		(exfpe),
+		   .alubusy		(alubusy),
 		   .dcdata		(dcdata[63:0]),
 		   .dctag		(dctag[21:0]),
 		   .dcdbe		(dcdbe),
@@ -254,11 +289,13 @@ module pipetest();
 		   .itlbpa		(itlbpa[31:0]),
 		   .itlbmiss		(itlbmiss),
 		   .itlbbusy		(itlbbusy),
+		   .itlbcache		(itlbcache),
 		   .jtlbpa		(jtlbpa[31:0]),
 		   .jtlbmiss		(jtlbmiss),
-		   .jtlberror		(jtlberror),
-		   .jtlbdirty		(jtlbdirty),
+		   .jtlbade		(jtlbade),
+		   .jtlbinval		(jtlbinval),
 		   .jtlbcache		(jtlbcache),
+		   .jtlbmod		(jtlbmod),
 		   .reset		(reset),
 		   .nmi			(nmi),
 		   .irq			(irq),
@@ -280,13 +317,19 @@ module pipetest();
 		 .exalur		(exalur[63:0]),
 		 .exovfl		(exovfl),
 		 .exbcmp		(exbcmp),
+		 .alubusy		(alubusy),
+		 .lo			(lo[63:0]),
+		 .hi			(hi[63:0]),
 		 // Inputs
 		 .clk			(clk),
+		 .phi1			(phi1),
+		 .phi2			(phi2),
 		 .exdec			(exdec[`DECMAX:0]),
 		 .exinstr		(exinstr[31:0]),
 		 .exr0			(exr0[63:0]),
 		 .exr1			(exr1[63:0]),
-		 .exlink		(exlink[63:0]));
+		 .exlink		(exlink[63:0]),
+		 .alugo			(alugo));
 
 	cache cache0(/*AUTOINST*/
 		     // Outputs
@@ -310,9 +353,9 @@ module pipetest();
 		     .phi1		(phi1),
 		     .phi2		(phi2),
 		     .pc		(pc[63:0]),
-		     .icreq		(icreq),
 		     .itlbpa		(itlbpa[31:0]),
 		     .icfill		(icfill),
+		     .itlbcache		(itlbcache),
 		     .dcva		(dcva[63:0]),
 		     .dcpa		(dcpa[31:0]),
 		     .dcwdata		(dcwdata[63:0]),
@@ -340,11 +383,16 @@ module pipetest();
 		.cp0errorepc		(cp0errorepc[63:0]),
 		.cp0taglo		(cp0taglo[31:0]),
 		.cp0random		(cp0random[4:0]),
-		.cp0wired		(cp0wired[4:0]),
+		.cp0index		(cp0index[31:0]),
+		.cp0entryhi		(cp0entryhi[63:0]),
+		.cp0entrylo0		(cp0entrylo0[63:0]),
+		.cp0entrylo1		(cp0entrylo1[63:0]),
+		.cp0pagemask		(cp0pagemask[31:0]),
 		// Inputs
 		.clk			(clk),
 		.phi1			(phi1),
 		.phi2			(phi2),
+		.stall			(stall),
 		.cp0raddr		(cp0raddr[4:0]),
 		.cp0waddr		(cp0waddr[4:0]),
 		.cp0wdata		(cp0wdata[63:0]),
@@ -355,8 +403,77 @@ module pipetest();
 		.cp0coldreset		(cp0coldreset),
 		.cp0softreset		(cp0softreset),
 		.cp0eret		(cp0eret),
+		.cp0setbadva		(cp0setbadva),
+		.cp0setcontext		(cp0setcontext),
+		.jtlbva			(jtlbva[63:0]),
 		.cp0taglodcval		(cp0taglodcval[31:0]),
-		.cp0taglodcset		(cp0taglodcset));
+		.cp0taglodcset		(cp0taglodcset),
+		.cp0jtlbshut		(cp0jtlbshut),
+		.cp0setentryhi		(cp0setentryhi),
+		.cp0entryhi_		(cp0entryhi_[63:0]),
+		.cp0entrylo0_		(cp0entrylo0_[63:0]),
+		.cp0entrylo1_		(cp0entrylo1_[63:0]),
+		.cp0pagemask_		(cp0pagemask_[31:0]),
+		.cp0index_		(cp0index_[31:0]),
+		.tlbp			(tlbp),
+		.tlbr			(tlbr),
+		.tlbwi			(tlbwi),
+		.tlbwr			(tlbwr));
+
+	jtlb jtlb0(/*AUTOINST*/
+		   // Outputs
+		   .jtlbpa		(jtlbpa[31:0]),
+		   .jtlbcache		(jtlbcache),
+		   .jtlbmiss		(jtlbmiss),
+		   .jtlbade		(jtlbade),
+		   .jtlbinval		(jtlbinval),
+		   .jtlbmod		(jtlbmod),
+		   .cp0jtlbshut		(cp0jtlbshut),
+		   .cp0setentryhi	(cp0setentryhi),
+		   .cp0entryhi_		(cp0entryhi_[63:0]),
+		   .cp0entrylo0_	(cp0entrylo0_[63:0]),
+		   .cp0entrylo1_	(cp0entrylo1_[63:0]),
+		   .cp0pagemask_	(cp0pagemask_[31:0]),
+		   .cp0index_		(cp0index_[31:0]),
+		   // Inputs
+		   .clk			(clk),
+		   .phi1		(phi1),
+		   .phi2		(phi2),
+		   .jtlbva		(jtlbva[63:0]),
+		   .jtlbreq		(jtlbreq),
+		   .jtlbwr		(jtlbwr),
+		   .tlbr		(tlbr),
+		   .tlbwi		(tlbwi),
+		   .tlbwr		(tlbwr),
+		   .tlbp		(tlbp),
+		   .cp0status		(cp0status[31:0]),
+		   .cp0entryhi		(cp0entryhi[63:0]),
+		   .cp0entrylo0		(cp0entrylo0[63:0]),
+		   .cp0entrylo1		(cp0entrylo1[63:0]),
+		   .cp0pagemask		(cp0pagemask[31:0]),
+		   .cp0index		(cp0index[31:0]),
+		   .cp0random		(cp0random[4:0]),
+		   .mode		(mode[1:0]),
+		   .mode64		(mode64));
+
+	itlb itlb0(/*AUTOINST*/
+		   // Outputs
+		   .itlbpa		(itlbpa[31:0]),
+		   .itlbmiss		(itlbmiss),
+		   .itlbbusy		(itlbbusy),
+		   .itlbcache		(itlbcache),
+		   // Inputs
+		   .clk			(clk),
+		   .phi1		(phi1),
+		   .phi2		(phi2),
+		   .pc			(pc[63:0]),
+		   .itlbreq		(itlbreq),
+		   .itlbfill		(itlbfill),
+		   .jtlbpa		(jtlbpa[31:0]),
+		   .jtlbmiss		(jtlbmiss),
+		   .jtlbade		(jtlbade),
+		   .jtlbinval		(jtlbinval),
+		   .jtlbcache		(jtlbcache));
 endmodule
 
 // Local Variables:

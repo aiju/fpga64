@@ -4,6 +4,7 @@ module pipe(
 	input wire clk,
 	input wire phi1,
 	input wire phi2,
+	output reg stall,
 
 	output reg [63:0] pc,
 	input wire [31:0] icinstr,
@@ -25,6 +26,9 @@ module pipe(
 	input wire exbcmp,
 	input wire exfpe,
 	
+	output reg alugo,
+	input wire alubusy,
+	
 	output reg [63:0] dcva,
 	output reg [31:0] dcpa,
 	input wire [63:0] dcdata,
@@ -44,14 +48,22 @@ module pipe(
 	input wire itlbmiss,
 	output reg itlbfill,
 	input wire itlbbusy,
+	input wire itlbcache,
 	
 	output reg [63:0] jtlbva,
 	input wire [31:0] jtlbpa,
 	output reg jtlbreq,
+	output reg jtlbwr,
 	input wire jtlbmiss,
-	input wire jtlberror,
-	input wire jtlbdirty,
+	input wire jtlbade,
+	input wire jtlbinval,
 	input wire jtlbcache,
+	input wire jtlbmod,
+	
+	output wire tlbp,
+	output wire tlbr,
+	output wire tlbwi,
+	output wire tlbwr,
 	
 	input wire reset,
 	input wire nmi,
@@ -72,35 +84,45 @@ module pipe(
 	output reg [65:0] cp0setepc,
 	output reg cp0coldreset,
 	output reg cp0softreset,
-	output reg cp0eret
+	output reg cp0eret,
+	output wire cp0setbadva,
+	output wire cp0setcontext,
+	
+	output wire [1:0] mode,
+	output wire mode64
 	
 );
 `include "cpuconst.vh"
 	
-	reg stall, stall0, icmiss, rfmiss, dcmiss, dcovfl, icade, rfade, dcfpe, dcdade, dcdbe0;
+	reg stall0, icmiss, rfmiss, dcmiss, dcovfl, icade, rfade, dcfpe, dcdade, dcdbe0, icissued;
 	reg rfkill, exkill, dckill, exc0, exc1;
 	reg rfloadr0, rfloadr1, exloadr0, exloadr1, ldi, storestall, dcissued, dcdone, wbcache, rfbd, exbd, dcbd, wbbd;
+	reg exissued;
 	reg busystall;
 	reg [4:0] rfwhy, exwhy, dcwhy;
 	reg [2:0] wbsz;
 	
 	reg [31:0] wbpa;
 	reg [63:0] gp[0:31], fp[0:31];
-	reg [63:0] rfr0, rfr1, dcalur, wbval, dcval, exbtarg, dcr1, dcwdata0, wbwdata, dcval0, excpc, rfpc, expc, dcpc, wbpc;
+	reg [63:0] rfr0, rfr1, dcalur, wbval, dcval, exbtarg, dcr1, dcwdata0, wbwdata, dcval0, excpc, rfpc, expc, dcpc, wbpc, lo, hi;
 	reg [`DECMAX:0] dcdec, wbdec;
 	
 	wire bemem=1, becpu=1, revend = cp0status[RE];
 	
-	wire [1:0] mode = cp0status[EXL] || cp0status[ERL] ? 0 : cp0status[KSU+1:KSU];
-	wire mode64 = mode == 0 ? cp0status[KX] : mode == 1 ? cp0status[SX] : cp0status[UX];
+	assign mode = cp0status[EXL] || cp0status[ERL] ? 0 : cp0status[KSU+1:KSU];
+	assign mode64 = mode == 0 ? cp0status[KX] : mode == 1 ? cp0status[SX] : cp0status[UX];
 	
 	wire [5:0] extargr = exdec[DECTARGR+5:DECTARGR];
 	wire [5:0] dctargr = dcdec[DECTARGR+5:DECTARGR];
 	wire [5:0] wbtargr = wbdec[DECTARGR+5:DECTARGR];
 	assign dcop = dcdec[DECCACHEOP+2:DECCACHEOP];
+	assign tlbp = dcdec[DECTLBP];
+	assign tlbr = dcdec[DECTLBR];
+	assign tlbwr = dcdec[DECTLBWR];
+	assign tlbwi = dcdec[DECTLBWI];
 	
 	always @(*) begin
-		icmiss = !itlbmiss && (!ictag[20] || itlbpa[31:12] != ictag[19:0]);
+		icmiss = !itlbmiss && (itlbcache ? !ictag[20] || itlbpa[31:12] != ictag[19:0] : !icissued);
 		icade = pc[1:0] != 0;
 	end
 	
@@ -153,6 +175,8 @@ module pipe(
 		dccache = jtlbcache;
 		dcdade = 0;
 		dcmiss = 0;
+		jtlbreq = 0;
+		jtlbwr = 0;
 		if(wbdec[DECSTORE]) begin
 			dcva = wbval;
 			dcpa = wbpa;
@@ -255,6 +279,7 @@ module pipe(
 			dcmiss = jtlbcache && (!dctag[21] || dctag[19:0] != jtlbpa[31:12]);
 			dcread = 1;
 			jtlbreq = 1;
+			jtlbwr = 1;
 			dcval = dcalur;
 			dcwdata0 = dcr1;
 			case(dcdec[DECSZ+3:DECSZ])
@@ -340,7 +365,7 @@ module pipe(
 		if(phi2) begin
 			exc0 <= wbdec[DECPANIC];
 			if(!stall || icbusy) begin
-				rfinstr <= rfkill || exkill || dckill ? 0 : icinstr;
+				rfinstr <= rfkill || exkill || dckill || wbdec[DECPANIC] || dcdec[DECPANIC] || exdec[DECPANIC] ? 0 : icinstr;
 				rfade <= icade;
 				rfmiss <= icmiss;
 			end
@@ -351,6 +376,8 @@ module pipe(
 				dcdbe0 <= dcdbe;
 				dcdone <= 1;
 			end
+			if(alugo)
+				exissued <= 1;
 			if(!stall) begin
 				rfpc <= pc;
 				rfbd <= rfdec[DECBRANCH];
@@ -368,6 +395,7 @@ module pipe(
 				exloadr1 <= rfloadr1;
 				expc <= rfpc;
 				exbd <= rfbd;
+				exissued <= 0;
 
 				dcdec <= dckill ? 0 : exdec;
 				if(exkill) begin
@@ -408,13 +436,18 @@ module pipe(
 			end
 			if(storestall)
 				wbdec[DECSTORE] <= 0;
+			if(wbdec[DECPANIC])
+				wbdec[DECPANIC] <= 0;
 			stall0 <= stall;
 		end
 	
 	always @(posedge clk)
 		if(phi1) begin
 			exc1 <= exc0;
+			if(icfill)
+				icissued <= 1;
 			if(!stall) begin
+				icissued <= 0;
 				pc <= exbcmp ? exbtarg : pc + 4;
 				exlink <= pc + 4;
 				if(wbtargr != 0)
@@ -438,6 +471,7 @@ module pipe(
 		ldi = 0;
 		storestall = 0;
 		busystall = 0;
+		alugo = 0;
 		dcwhy = 5'bx;
 		exwhy = 5'bx;
 		rfwhy = 5'bx;
@@ -450,21 +484,27 @@ module pipe(
 //		dctrap: begin dckill = 1; dcwhy = WHYTRAP; end
 		dcfpe: begin dckill = 1; dcwhy = WHYFPE; end
 		dcdade: begin dckill = 1; dcwhy = wbdec[DECSTORE] ? WHYADES : WHYADEL; end
-		!itlbbusy && (jtlbmiss || jtlberror): begin dckill = 1; dcwhy = dcdec[DECSTORE] ? WHYTLBS : WHYTLBL; end
+		!itlbbusy && (jtlbmiss || jtlbinval): begin dckill = 1; dcwhy = dcdec[DECSTORE] ? WHYTLBS : WHYTLBL; end
+		!itlbbusy && jtlbade: begin dckill = 1; dcwhy = jtlbwr ? WHYADES : WHYADEL; end
+		!itlbbusy && jtlbmod: begin dckill = 1; dcwhy = WHYTLBM; end
 		irq && irqen && !stall0: begin dckill = 1; dcwhy = WHYINTR; end
 		dcbusy && wbdec[DECSTORE]: begin stall = 1; busystall = 1; end
 		wbdec[DECSTORE] && (dcdec[DECSTORE] || dcdec[DECLOAD]): begin stall = 1; storestall = 1; end
 		dcbusy && (dcread || dcfill) && !dcdone: stall = 1;
 		dcmiss: begin dcfill = 1; stall = 1; end
 		dcdone ? dcdbe0 : dcdbe: begin dckill = 1; dcwhy = WHYDBE; end
+		dcdec[DECPANIC]: ;
 		
 		exdec[DECINVALID]: begin exkill = 1; exwhy = WHYRSVD; end
 		exdec[DECSYSCALL]: begin exkill = 1; exwhy = WHYSYSC; end
 		exdec[DECBREAK]: begin exkill = 1; exwhy = WHYBRPT; end
 		exloadr0 || exloadr1 && !exdec[DECLOAD]: begin stall = 1; ldi = 1; end
+		exdec[DECLONGALU] && !exissued: begin stall = 1; alugo = 1; end
+		alubusy: stall = 1;
+		exdec[DECPANIC]: ;
 		
-		rfade: begin rfkill = 1; rfwhy = WHYIADE; end
-		itlbbusy && (jtlbmiss || jtlberror): begin rfkill = 1; rfwhy = WHYITLB; end
+		rfade || itlbbusy && jtlbade: begin rfkill = 1; rfwhy = WHYIADE; end
+		itlbbusy && (jtlbmiss || jtlbinval): begin rfkill = 1; rfwhy = WHYITLB; end
 		itlbbusy: stall = 1;
 		itlbmiss: begin itlbfill = 1; stall = 1; end
 		icbusy: stall = 1;
@@ -515,6 +555,8 @@ module pipe(
 			endcase
 		end
 	end
+	assign cp0setbadva = jtlbmiss || jtlbinval || jtlbmod || jtlbade || dcdade;
+	assign cp0setcontext = jtlbmiss || jtlbinval || jtlbmod;
 	
 	integer i;
 	initial begin

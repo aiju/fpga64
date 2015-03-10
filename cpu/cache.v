@@ -8,10 +8,10 @@ module cache(
 	input wire [63:0] pc,
 	output reg [31:0] icinstr,
 	output reg [20:0] ictag,
-	input wire icreq,
 	input wire [31:0] itlbpa,
 	input wire icfill,
 	output reg icbusy,
+	input wire itlbcache,
 	
 	input wire [63:0] dcva,
 	input wire [31:0] dcpa,
@@ -85,6 +85,8 @@ module cache(
 	localparam ICIDLE = 0;
 	localparam ICREAD = 1;
 	localparam ICRECV = 2;
+	localparam ICREADU = 3;
+	localparam ICRECVU = 4;
 	
 	integer i;
 	initial begin
@@ -111,7 +113,10 @@ module cache(
 		default:
 			dctag = dtag[dcva[12:4]];
 		endcase
-		icinstr = pc[2] ? idata[pc[13:3]][31:0] : idata[pc[13:3]][63:32];
+		if(icstate == ICRECVU)
+			icinstr = extrdata >> (4 - pc[2:0]) * 8;
+		else
+			icinstr = pc[2] ? idata[pc[13:3]][31:0] : idata[pc[13:3]][63:32];
 		ictag = itag[pc[13:5]];
 	end
 	assign cp0taglodcval = {4'd0, dctag[19:0], {2{dctag[21]}}, 6'd0};
@@ -310,10 +315,13 @@ module cache(
 		ICIDLE: begin
 			icbusy = 0;
 			if(icfill)
-				icstate_ = ICREAD;
+				if(itlbcache)
+					icstate_ = ICREAD;
+				else
+					icstate_ = ICREADU;
 		end
 		ICREAD: begin
-			icextaddr = itlbpa;
+			icextaddr = itlbpa & ~31;
 			icextreq = 1;
 			if(icextrdy) begin
 				icstate_ = ICRECV;
@@ -327,6 +335,16 @@ module cache(
 				if(icctr == 3)
 					icstate_ = ICIDLE;
 			end
+		ICREADU: begin
+			icextaddr = itlbpa;
+			icextreq = 1;
+			icextsz = 3;
+			if(icextrdy)
+				icstate_ = ICRECVU;
+		end
+		ICRECVU:
+			if(extreply && !extreplyto)
+				icstate_ = ICIDLE;
 		endcase
 	end
 
