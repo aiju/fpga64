@@ -1,0 +1,21 @@
+objtype=mips
+</$objtype/mkfile
+TARG=boot.hex 9boot
+OFILES=boot.$O main.$O
+
+all:V: $TARG
+
+boot.hex: boot
+	xd -v boot | awk ' { print $2; print $3 } ' > boot.hex
+
+boot: $OFILES
+	$LD -o $target -T0x80000000 -l -q -H6 -s $prereq
+
+9boot: $OFILES
+	$LD -o $target -T0x80000000 -l -H1 $prereq
+
+%.$O: %.s
+	$AS $stem.s
+
+%.$O: %.c
+	$CC $CFLAGS $stem.c

@@ -1,0 +1,55 @@
+#define INDEX 0
+#define RANDOM 1
+#define ENTRYLO0 2
+#define ENTRYLO1 3
+#define PAGEMASK 5
+#define WIRED 6
+#define ENTRYHI 10
+
+
+TEXT _start(SB), $-4
+	MOVW $boot(SB), R1
+	JMP (R1)
+
+TEXT boot(SB), $-4
+	MOVW $setR30(SB), R30
+	MOVW $0x80008000, R29
+	MOVW R0, M(PAGEMASK)
+	MOVW $0x80000000, R1
+	MOVW R1, M(ENTRYHI)
+	MOVW R0, M(ENTRYLO0)
+	MOVW R0, M(ENTRYLO1)
+	
+	MOVW R0, R1
+b:	MOVW R1, M(INDEX)
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	TLBWI
+	ADD $1, R1
+	SGT $32, R1, R2
+	BNE R2, R0, b
+	
+	MOVW $7, R1
+	MOVW R1, M(INDEX)
+	MOVW R0, M(ENTRYHI)
+	MOVW $0x48d007, R1
+	MOVW R1, M(ENTRYLO0)
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	TLBWR
+	TLBP
+	
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	NOR R0, R0, R0
+	
+	MOVW (R0), R1
+
+	JAL main(SB)
+
+a:	JMP a

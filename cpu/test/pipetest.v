@@ -9,6 +9,7 @@ module pipetest();
 	// Beginning of automatic wires (for undeclared instantiated-module outputs)
 	wire		alubusy;		// From alu0 of alu.v
 	wire		alugo;			// From pipe0 of pipe.v
+	wire		bemem;			// From pipe0 of pipe.v
 	wire [31:0]	cp0cause;		// From cp0 of cp0.v
 	wire		cp0coldreset;		// From pipe0 of pipe.v
 	wire [31:0]	cp0config;		// From cp0 of cp0.v
@@ -24,6 +25,7 @@ module pipetest();
 	wire [31:0]	cp0index;		// From cp0 of cp0.v
 	wire [31:0]	cp0index_;		// From jtlb0 of jtlb.v
 	wire		cp0jtlbshut;		// From jtlb0 of jtlb.v
+	wire		cp0llset;		// From pipe0 of pipe.v
 	wire [31:0]	cp0pagemask;		// From cp0 of cp0.v
 	wire [31:0]	cp0pagemask_;		// From jtlb0 of jtlb.v
 	wire [4:0]	cp0raddr;		// From pipe0 of pipe.v
@@ -40,6 +42,8 @@ module pipetest();
 	wire [31:0]	cp0taglo;		// From cp0 of cp0.v
 	wire		cp0taglodcset;		// From cache0 of cache.v
 	wire [31:0]	cp0taglodcval;		// From cache0 of cache.v
+	wire		cp0tagloicset;		// From cache0 of cache.v
+	wire [31:0]	cp0tagloicval;		// From cache0 of cache.v
 	wire [4:0]	cp0waddr;		// From pipe0 of pipe.v
 	wire [63:0]	cp0wdata;		// From pipe0 of pipe.v
 	wire		cp0write;		// From pipe0 of pipe.v
@@ -73,9 +77,12 @@ module pipetest();
 	wire		extwr;			// From cache0 of cache.v
 	wire [63:0]	hi;			// From alu0 of alu.v
 	wire		icbusy;			// From cache0 of cache.v
+	wire		icdoop;			// From pipe0 of pipe.v
 	wire		icfill;			// From pipe0 of pipe.v
 	wire [31:0]	icinstr;		// From cache0 of cache.v
+	wire [31:0]	icpa;			// From pipe0 of pipe.v
 	wire [20:0]	ictag;			// From cache0 of cache.v
+	wire [63:0]	icva;			// From pipe0 of pipe.v
 	wire		itlbbusy;		// From itlb0 of itlb.v
 	wire		itlbcache;		// From itlb0 of itlb.v
 	wire		itlbfill;		// From pipe0 of pipe.v
@@ -127,17 +134,20 @@ module pipetest();
 
 		for(i = 0; i < 4096; i=i+1)
 			mem[i] = 0;
-		`A(0) = `LUI(1,16'h8000);
+			
+		$readmemh("cpu/test/c/boot.hex", mem);
+	
+	/*	`A(0) = `LUI(1,16'h8000);
 		`A(4) = `ADDI(1,16'h10,1);
 		`A(8) = `JR(1);
-		`A(16) = `LD(1,16'h30,2);
-		`A(20) = `LD(1,16'h38,3);
-		`A(24) = `DMULTU(2,3);
-		`A(28) = `BEQ(0,0,-1);
+		`A(16) = `CACHE(1,16'h1000,0,4);
+		`A(20) = `ADDI(0,1,2);
+		`A(24) = `ADDI(0,2,2);
+		`A(28) = `ADDI(0,3,2);
 		`A(64) = 32'hDEADBEEF;
 		`A(68) = 32'hCAFEBABE;
 		`A(72) = 32'h12345678;
-		//`A(76) = 32'h9ABCDEF0;
+		`A(76) = 32'h9ABCDEF0;*/
 	
 		clk = 1;
 		phi1 = 1;
@@ -163,6 +173,7 @@ module pipetest();
 	localparam EXTIR3 = 4;
 	localparam EXTDR0 = 5;
 	localparam EXTDR1 = 6;
+	localparam EXTUR = 7;
 	initial extstate = EXTIDLE;
 
 	always @(posedge clk)
@@ -172,6 +183,19 @@ module pipetest();
 				addrreg <= extaddr >> 3 & 4095;
 				src <= extsrc;
 			end
+			if(extreq && extwr && extaddr < 32768)
+				case(extsz)
+				0: mem[extaddr/8][56 - extaddr[2:0] * 8 +: 8] <= extwdata[7:0];
+				1: mem[extaddr/8][48 - extaddr[2:0] * 8 +: 16] <= extwdata[15:0];
+				2: mem[extaddr/8][40 - extaddr[2:0] * 8 +: 24] <= extwdata[23:0];
+				3: mem[extaddr/8][32 - extaddr[2:0] * 8 +: 32] <= extwdata[31:0];				
+				4: mem[extaddr/8][24 - extaddr[2:0] * 8 +: 40] <= extwdata[39:0];
+				5: mem[extaddr/8][16 - extaddr[2:0] * 8 +: 48] <= extwdata[47:0];
+				6: mem[extaddr/8][8 - extaddr[2:0] * 8 +: 56] <= extwdata[55:0];
+				7, 15: mem[extaddr/8] <= extwdata;
+				endcase
+			if(extreq && extwr && extaddr == 32'h10000000)
+				$write("%c", extwdata);
 		end
 	
 	always @(*) begin
@@ -187,8 +211,10 @@ module pipetest();
 			if(extreq && !extwr)
 				if(extsz == 31)
 					extstate_ = EXTIR0;
-				else
+				else if(extsz == 15)
 					extstate_ = EXTDR0;
+				else
+					extstate_ = EXTUR;
 			loadaddr = 1;
 		end
 		EXTIR0: begin
@@ -221,6 +247,11 @@ module pipetest();
 			extrdata = mem[addrreg^1];
 			extreply = 1;
 		end
+		EXTUR: begin
+			extstate_ = EXTIDLE;
+			extrdata = mem[addrreg];
+			extreply = 1;
+		end
 		endcase
 	end
 	
@@ -228,7 +259,10 @@ module pipetest();
 		   // Outputs
 		   .stall		(stall),
 		   .pc			(pc[63:0]),
+		   .icva		(icva[63:0]),
+		   .icpa		(icpa[31:0]),
 		   .icfill		(icfill),
+		   .icdoop		(icdoop),
 		   .rfinstr		(rfinstr[31:0]),
 		   .exdec		(exdec[`DECMAX:0]),
 		   .exinstr		(exinstr[31:0]),
@@ -258,6 +292,7 @@ module pipetest();
 		   .cp0waddr		(cp0waddr[4:0]),
 		   .cp0wdata		(cp0wdata[63:0]),
 		   .cp0write		(cp0write),
+		   .bemem		(bemem),
 		   .cp0setexl		(cp0setexl),
 		   .cp0setexccode	(cp0setexccode[5:0]),
 		   .cp0setepc		(cp0setepc[65:0]),
@@ -266,6 +301,7 @@ module pipetest();
 		   .cp0eret		(cp0eret),
 		   .cp0setbadva		(cp0setbadva),
 		   .cp0setcontext	(cp0setcontext),
+		   .cp0llset		(cp0llset),
 		   .mode		(mode[1:0]),
 		   .mode64		(mode64),
 		   // Inputs
@@ -301,6 +337,7 @@ module pipetest();
 		   .irq			(irq),
 		   .irqen		(irqen),
 		   .cp0rdata		(cp0rdata[63:0]),
+		   .cp0config		(cp0config[31:0]),
 		   .cp0status		(cp0status[31:0]),
 		   .cp0epc		(cp0epc[63:0]),
 		   .cp0errorepc		(cp0errorepc[63:0]));
@@ -342,6 +379,8 @@ module pipetest();
 		     .dcdbe		(dcdbe),
 		     .cp0taglodcval	(cp0taglodcval[31:0]),
 		     .cp0taglodcset	(cp0taglodcset),
+		     .cp0tagloicval	(cp0tagloicval[31:0]),
+		     .cp0tagloicset	(cp0tagloicset),
 		     .extaddr		(extaddr[31:0]),
 		     .extwdata		(extwdata[63:0]),
 		     .extsz		(extsz[4:0]),
@@ -352,10 +391,12 @@ module pipetest();
 		     .clk		(clk),
 		     .phi1		(phi1),
 		     .phi2		(phi2),
-		     .pc		(pc[63:0]),
-		     .itlbpa		(itlbpa[31:0]),
+		     .bemem		(bemem),
+		     .icva		(icva[63:0]),
+		     .icpa		(icpa[31:0]),
 		     .icfill		(icfill),
 		     .itlbcache		(itlbcache),
+		     .icdoop		(icdoop),
 		     .dcva		(dcva[63:0]),
 		     .dcpa		(dcpa[31:0]),
 		     .dcwdata		(dcwdata[63:0]),
@@ -405,9 +446,13 @@ module pipetest();
 		.cp0eret		(cp0eret),
 		.cp0setbadva		(cp0setbadva),
 		.cp0setcontext		(cp0setcontext),
+		.cp0llset		(cp0llset),
 		.jtlbva			(jtlbva[63:0]),
+		.jtlbpa			(jtlbpa[31:0]),
 		.cp0taglodcval		(cp0taglodcval[31:0]),
 		.cp0taglodcset		(cp0taglodcset),
+		.cp0tagloicval		(cp0tagloicval[31:0]),
+		.cp0tagloicset		(cp0tagloicset),
 		.cp0jtlbshut		(cp0jtlbshut),
 		.cp0setentryhi		(cp0setentryhi),
 		.cp0entryhi_		(cp0entryhi_[63:0]),

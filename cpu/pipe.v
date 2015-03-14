@@ -7,11 +7,15 @@ module pipe(
 	output reg stall,
 
 	output reg [63:0] pc,
+	
+	output reg [63:0] icva,
+	output reg [31:0] icpa,
 	input wire [31:0] icinstr,
 	input wire [20:0] ictag,
 	output reg icfill,
 	input wire icerror,
 	input wire icbusy,
+	output reg icdoop,
 	
 	output reg [31:0] rfinstr,
 	input wire [`DECMAX:0] rfdec,
@@ -76,6 +80,8 @@ module pipe(
 	output reg [63:0] cp0wdata,
 	output reg cp0write,
 	
+	input wire [31:0] cp0config,
+	output wire bemem,
 	input wire [31:0] cp0status,
 	input wire [63:0] cp0epc,
 	input wire [63:0] cp0errorepc,
@@ -87,6 +93,7 @@ module pipe(
 	output reg cp0eret,
 	output wire cp0setbadva,
 	output wire cp0setcontext,
+	output reg cp0llset,
 	
 	output wire [1:0] mode,
 	output wire mode64
@@ -94,20 +101,23 @@ module pipe(
 );
 `include "cpuconst.vh"
 	
-	reg stall0, icmiss, rfmiss, dcmiss, dcovfl, icade, rfade, dcfpe, dcdade, dcdbe0, icissued;
+	reg stall0, icmiss, rfmiss, dcmiss, dcovfl, icade, rfade, dcfpe, dcdade, dcdbe0, icissued, dctrap;
 	reg rfkill, exkill, dckill, exc0, exc1;
 	reg rfloadr0, rfloadr1, exloadr0, exloadr1, ldi, storestall, dcissued, dcdone, wbcache, rfbd, exbd, dcbd, wbbd;
-	reg exissued;
+	reg exissued, llbit;
 	reg busystall;
 	reg [4:0] rfwhy, exwhy, dcwhy;
 	reg [2:0] wbsz;
 	
 	reg [31:0] wbpa;
+	reg [31:0] dcinstr, wbinstr;
 	reg [63:0] gp[0:31], fp[0:31];
-	reg [63:0] rfr0, rfr1, dcalur, wbval, dcval, exbtarg, dcr1, dcwdata0, wbwdata, dcval0, excpc, rfpc, expc, dcpc, wbpc, lo, hi;
+	reg [63:0] rfr0, rfr1, dcalur, wbval, dcval, exbtarg, dcr1, dcwdata0, wbwdata, dcval0, excpc, rfpc, expc, dcpc, wbpc, lo, hi, lladdr, wbva;
 	reg [`DECMAX:0] dcdec, wbdec;
 	
-	wire bemem=1, becpu=1, revend = cp0status[RE];
+	assign bemem = cp0config[BE];
+	wire revend = cp0status[RE];
+	wire becpu = bemem ^ revend;
 	
 	assign mode = cp0status[EXL] || cp0status[ERL] ? 0 : cp0status[KSU+1:KSU];
 	assign mode64 = mode == 0 ? cp0status[KX] : mode == 1 ? cp0status[SX] : cp0status[UX];
@@ -120,10 +130,17 @@ module pipe(
 	assign tlbr = dcdec[DECTLBR];
 	assign tlbwr = dcdec[DECTLBWR];
 	assign tlbwi = dcdec[DECTLBWI];
+	wire [1:0] cop = {exinstr[27] && !exinstr[26], exinstr[26] && !exinstr[27]};
+	wire copok = cop == 0 && mode == 0 || cp0status[CU + {3'd0, cop}];
 	
 	always @(*) begin
 		icmiss = !itlbmiss && (itlbcache ? !ictag[20] || itlbpa[31:12] != ictag[19:0] : !icissued);
 		icade = pc[1:0] != 0;
+	end
+	
+	always @(*) begin
+		icva = pc;
+		icpa = itlbpa;
 	end
 	
 	always @(*) begin
@@ -169,7 +186,7 @@ module pipe(
 		dcpa = jtlbpa;
 		dcsz = 3'bx;
 		dcwdata = 64'bx;
-		dcwdata0 = 64'bx;
+		dcwdata0 = dcr1;
 		dcread = 0;
 		dcdoop = 0;
 		dccache = jtlbcache;
@@ -177,8 +194,13 @@ module pipe(
 		dcmiss = 0;
 		jtlbreq = 0;
 		jtlbwr = 0;
+		dcval = dcalur;
+		cp0llset = 0;
+		cp0raddr = dcinstr[15:11];
+		if(dcdec[DECMFC0])
+			dcval = cp0rdata;
 		if(wbdec[DECSTORE]) begin
-			dcva = wbval;
+			dcva = wbva;
 			dcpa = wbpa;
 			dccache = wbcache;
 			dcwdata = wbwdata;
@@ -187,6 +209,7 @@ module pipe(
 			dcva = dcalur;
 			dcread = 1;
 			jtlbreq = 1;
+			cp0llset = dcdec[DECLLSC];
 			case(dcdec[DECSZ+3:DECSZ])
 			SZBYTE: begin
 				dcsz = 0;
@@ -280,8 +303,7 @@ module pipe(
 			dcread = 1;
 			jtlbreq = 1;
 			jtlbwr = 1;
-			dcval = dcalur;
-			dcwdata0 = dcr1;
+			dcval = {63'd0, llbit};
 			case(dcdec[DECSZ+3:DECSZ])
 			SZBYTE: begin
 				dcsz = 0;
@@ -337,8 +359,7 @@ module pipe(
 			dcdoop = 1;
 			dcread = 1;
 			jtlbreq = 1;
-		end else
-			dcval = dcalur;
+		end
 		jtlbva = dcva;
 		if(itlbbusy) begin
 			jtlbreq = 1;
@@ -356,9 +377,14 @@ module pipe(
 		else if(exdec[DECERET]) begin
 			exbtarg = cp0status[ERL] ? cp0errorepc : cp0epc;
 			cp0eret = 1;
-		end	
-		else if(exdec[DECBRANCH])
+		end else if(exdec[DECBRANCH])
 			exbtarg = pc + {{46{exinstr[15]}}, exinstr[15:0], 2'b00};
+	end
+	
+	always @(*) begin
+		cp0waddr = wbinstr[15:11];
+		cp0wdata = wbwdata;
+		cp0write = wbdec[DECMTC0];
 	end
 	
 	always @(posedge clk)
@@ -369,7 +395,7 @@ module pipe(
 				rfade <= icade;
 				rfmiss <= icmiss;
 			end
-			if((dcfill || dcread) && !dcbusy)
+			if((dcfill || dcread) && !dcbusy || icdoop)
 				dcissued <= 1;
 			if(dcissued && !dcbusy) begin
 				dcval0 <= dcval;
@@ -397,6 +423,7 @@ module pipe(
 				exbd <= rfbd;
 				exissued <= 0;
 
+				dcinstr <= exinstr;
 				dcdec <= dckill ? 0 : exdec;
 				if(exkill) begin
 					dcdec <= 0;
@@ -411,7 +438,9 @@ module pipe(
 				dcdone <= 0;
 				dcpc <= expc;
 				dcbd <= exbd;
+				dctrap <= exbcmp && exdec[DECTRAP];
 
+				wbinstr <= dcinstr;
 				wbdec <= dcdec;
 				if(dckill) begin
 					wbdec <= 0;
@@ -425,6 +454,7 @@ module pipe(
 				wbsz <= dcsz;
 				wbpc <= dcpc;
 				wbbd <= dcbd;
+				wbva <= dcva;
 			end
 			if(ldi) begin
 				if(exloadr0)
@@ -438,6 +468,12 @@ module pipe(
 				wbdec[DECSTORE] <= 0;
 			if(wbdec[DECPANIC])
 				wbdec[DECPANIC] <= 0;
+			if(cp0llset)
+				llbit <= 1;
+			if(!llbit && dcdec[DECLLSC])
+				wbdec[DECSTORE] <= 0;
+			if(cp0eret)
+				llbit <= 0;
 			stall0 <= stall;
 		end
 	
@@ -448,7 +484,7 @@ module pipe(
 				icissued <= 1;
 			if(!stall) begin
 				icissued <= 0;
-				pc <= exbcmp ? exbtarg : pc + 4;
+				pc <= exbcmp && exdec[DECBRANCH] ? exbtarg : pc + 4;
 				exlink <= pc + 4;
 				if(wbtargr != 0)
 					if(wbtargr[5])
@@ -465,6 +501,7 @@ module pipe(
 		dcfill = 0;
 		itlbfill = 0;
 		icfill = 0;
+		icdoop = 0;
 		rfkill = 0;
 		exkill = 0;
 		dckill = 0;
@@ -479,9 +516,10 @@ module pipe(
 		case(1'b1)
 		exc0 || exc1: stall = 1;
 		reset: begin dckill = 1; dcwhy = WHYRST; end
+		wbdec[DECPANIC]: ;
 		nmi && !stall0: begin dckill = 1; dcwhy = WHYNMI; end
 		dcovfl: begin dckill = 1; dcwhy = WHYOVFL; end
-//		dctrap: begin dckill = 1; dcwhy = WHYTRAP; end
+		dctrap: begin dckill = 1; dcwhy = WHYTRAP; end
 		dcfpe: begin dckill = 1; dcwhy = WHYFPE; end
 		dcdade: begin dckill = 1; dcwhy = wbdec[DECSTORE] ? WHYADES : WHYADEL; end
 		!itlbbusy && (jtlbmiss || jtlbinval): begin dckill = 1; dcwhy = dcdec[DECSTORE] ? WHYTLBS : WHYTLBL; end
@@ -490,14 +528,17 @@ module pipe(
 		irq && irqen && !stall0: begin dckill = 1; dcwhy = WHYINTR; end
 		dcbusy && wbdec[DECSTORE]: begin stall = 1; busystall = 1; end
 		wbdec[DECSTORE] && (dcdec[DECSTORE] || dcdec[DECLOAD]): begin stall = 1; storestall = 1; end
+		icbusy && dcdec[DECCACHE] && !dcdec[DECDCACHE]: stall = 1;
+		dcdec[DECCACHE] && !dcdec[DECDCACHE] && !dcissued: begin stall = 1; icdoop = 1; end
 		dcbusy && (dcread || dcfill) && !dcdone: stall = 1;
 		dcmiss: begin dcfill = 1; stall = 1; end
 		dcdone ? dcdbe0 : dcdbe: begin dckill = 1; dcwhy = WHYDBE; end
 		dcdec[DECPANIC]: ;
 		
-		exdec[DECINVALID]: begin exkill = 1; exwhy = WHYRSVD; end
+		exdec[DECINVALID] || exdec[DEC64] && mode != 0 && !mode64: begin exkill = 1; exwhy = WHYRSVD; end
 		exdec[DECSYSCALL]: begin exkill = 1; exwhy = WHYSYSC; end
 		exdec[DECBREAK]: begin exkill = 1; exwhy = WHYBRPT; end
+		exdec[DECCOP] && !copok: begin exkill = 1; exwhy = WHYCPU; end
 		exloadr0 || exloadr1 && !exdec[DECLOAD]: begin stall = 1; ldi = 1; end
 		exdec[DECLONGALU] && !exissued: begin stall = 1; alugo = 1; end
 		alubusy: stall = 1;

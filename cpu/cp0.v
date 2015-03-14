@@ -25,11 +25,15 @@ module cp0(
 	input wire cp0eret,
 	input wire cp0setbadva,
 	input wire cp0setcontext,
+	input wire cp0llset,
 	input wire [63:0] jtlbva,
+	input wire [31:0] jtlbpa,
 	
 	output reg [31:0] cp0taglo,
 	input wire [31:0] cp0taglodcval,
 	input wire cp0taglodcset,
+	input wire [31:0] cp0tagloicval,
+	input wire cp0tagloicset,
 
 	output reg [4:0] cp0random,
 	output reg [31:0] cp0index,
@@ -60,6 +64,7 @@ module cp0(
 	reg countdiv;
 	reg cp0random5;
 	reg [5:0] cp0wired;
+	reg [31:0] cp0lladdr;
 	reg [63:0] cp0context, cp0xcontext;
 	
 	always @(*)
@@ -79,6 +84,7 @@ module cp0(
 		13: cp0rdata = {32'b0, cp0cause};
 		14: cp0rdata = cp0epc;
 		15: cp0rdata = {48'd0, 16'h0B00};
+		17: cp0rdata = {32'd0, cp0lladdr};
 		28: cp0rdata = {32'b0, cp0taglo};
 		30: cp0rdata = cp0errorepc;
 		default: cp0rdata = 0;
@@ -119,6 +125,8 @@ module cp0(
 			end
 			if(cp0taglodcset)
 				cp0taglo <= cp0taglodcval;
+			if(cp0tagloicset)
+				cp0taglo <= cp0tagloicval;
 			if(cp0eret)
 				if(cp0status[ERL])
 					cp0status[ERL] <= 0;
@@ -134,7 +142,7 @@ module cp0(
 			if(cp0setentryhi)
 				cp0entryhi <= cp0entryhi_;
 			if(!stall)
-				if(cp0random == cp0wired)
+				if(cp0random == cp0wired[4:0])
 					cp0random <= 31;
 				else
 					cp0random <= cp0random - 1;
@@ -145,6 +153,8 @@ module cp0(
 				cp0xcontext[32:31] <= jtlbva[63:62];
 				cp0xcontext[30:4] <= jtlbva[39:13];
 			end
+			if(cp0llset && !stall)
+				cp0lladdr <= jtlbpa;
 			if(cp0write)
 				case(cp0waddr)
 				0: cp0index <= cp0wdata[31:0] & 32'h8000003f;
@@ -170,6 +180,7 @@ module cp0(
 				13: cp0cause[9:8] <= cp0wdata[9:8];
 				14: cp0epc <= cp0wdata;
 				16: cp0config <= cp0wdata[31:0] & 32'h0f00800f | 32'h00066460;
+				17: cp0lladdr <= cp0wdata[31:0];
 				20: cp0xcontext <= cp0wdata & ~64'hf;
 				28: cp0taglo <= cp0wdata[31:0] & 32'h0fffffc0;
 				30: cp0errorepc <= cp0wdata;
@@ -179,6 +190,7 @@ module cp0(
 	initial begin
 		cp0status = 0;
 		cp0config = 0;
+		cp0entryhi = 0;
 	end
 
 endmodule

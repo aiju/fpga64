@@ -65,7 +65,7 @@ module jtlb(
 	integer i;
 	always @(*)
 		for(i = 0; i < 32; i = i + 1)
-			tlbhit[i] = ((tlbent[i][VPN+26:VPN] ^ va[39:13]) & {{8{mode64}}, 7'h3f, ~tlbent[i][MASK+11:MASK]}) == 0 &&
+			tlbhit[i] = ((tlbent[i][VPN+26:VPN] ^ va[39:13]) & {{8{mode64}}, 7'h7f, ~tlbent[i][MASK+11:MASK]}) == 0 &&
 				(!mode64 || jtlbva[63:62] == tlbent[i][REG+1:REG]) &&
 				(tlbent[i][GLOBAL] || tlbent[i][ASID+7:ASID] == asid);
 	always @(*) begin
@@ -74,8 +74,8 @@ module jtlb(
 			if(tlbhit[i])
 				hit = i[4:0];
 		if(tlbr)
-			i = cp0index & 32'h1f;
-		hitent = tlbent[i];
+			hit = cp0index[4:0];
+		hitent = tlbent[hit];
 	end
 	assign cp0index_ = {tlbhit == 0, 26'd0, hit};
 	assign cp0pagemask_ = hitent[223:192];

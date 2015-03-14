@@ -5,13 +5,16 @@ module cache(
 	input wire phi1,
 	input wire phi2,
 	
-	input wire [63:0] pc,
+	input wire bemem,
+	
+	input wire [63:0] icva,
 	output reg [31:0] icinstr,
 	output reg [20:0] ictag,
-	input wire [31:0] itlbpa,
+	input wire [31:0] icpa,
 	input wire icfill,
 	output reg icbusy,
 	input wire itlbcache,
+	input wire icdoop,
 	
 	input wire [63:0] dcva,
 	input wire [31:0] dcpa,
@@ -31,6 +34,8 @@ module cache(
 	input wire [31:0] cp0taglo,
 	output wire [31:0] cp0taglodcval,
 	output reg cp0taglodcset,
+	output wire [31:0] cp0tagloicval,
+	output reg cp0tagloicset,
 	
 	output wire [31:0] extaddr,
 	output reg [63:0] extwdata,
@@ -68,8 +73,8 @@ module cache(
 	reg [20:0] itag[0:511];
 	reg dcload, dchalf, icload;
 	reg [1:0] icctr;
-	reg clricctr, incicctr, dcloadreq, dcinval, dcdirtyex, dcloadtag;
-	
+	reg clricctr, incicctr, dcloadreq, dcinval, icinval, dcdirtyex, dcloadtag, icloadtag;
+
 	reg [3:0] dcstate, dcstate_;
 	localparam DCIDLE = 0;
 	localparam DCREAD = 1;
@@ -98,14 +103,16 @@ module cache(
 		icstate = ICIDLE;
 	end
 	
+	wire [5:0] off = {bemem ? 3'd7 - dcsz - dcva[2:0] : dcva[2:0], 3'd0};
+	
 	always @(*) begin
 		case(dcstate)
 		DCRECVU, DCRECV:
-			dcdata = extrdata >> (7 - dcsz - dcva[2:0]) * 8;
+			dcdata = extrdata >> off;
 		DCWRITE, DCWRITE2:
 			dcdata = ddata[{dcva[12:4], dcstate == DCWRITE2}];
 		default:
-			dcdata = ddata[dcva[12:3]] >> (7 - dcsz - dcva[2:0]) * 8;
+			dcdata = ddata[dcva[12:3]] >> off;
 		endcase
 		case(dcstate)
 		DCRECV:
@@ -113,43 +120,46 @@ module cache(
 		default:
 			dctag = dtag[dcva[12:4]];
 		endcase
-		if(icstate == ICRECVU)
-			icinstr = extrdata >> (4 - pc[2:0]) * 8;
+		if(icstate == ICRECVU || icstate == ICRECV && icva[4:3] == 3)
+			icinstr = icva[2] ^ bemem ? extrdata[63:32] : extrdata[31:0];
 		else
-			icinstr = pc[2] ? idata[pc[13:3]][31:0] : idata[pc[13:3]][63:32];
-		ictag = itag[pc[13:5]];
+			icinstr = icva[2] ^ bemem ? idata[icva[13:3]][63:32] : idata[icva[13:3]][31:0];
+		ictag = itag[icva[13:5]];
 	end
 	assign cp0taglodcval = {4'd0, dctag[19:0], {2{dctag[21]}}, 6'd0};
+	assign cp0tagloicval = {4'd0, ictag[19:0], dctag[20], 7'd0};
 	
-	reg [5:0] pos;
 	always @(posedge clk) begin
 		if(phi2) begin
 			if(dcload) begin
-				ddata[{dcva[12:4], dchalf}] <= extrdata;
-				dtag[dcva[12:4]] <= {2'b10, dcpa[31:12]};
+				ddata[{dcva0[12:4], dchalf}] <= extrdata;
+				dtag[dcva0[12:4]] <= {2'b10, dcpa[31:12]};
 			end
 			if(dcinval)
-				dtag[dcva[12:4]][20] <= 0;
+				dtag[dcva[12:4]][21] <= 0;
 			if(dcdirtyex)
 				dtag[dcva[12:4]] <= {2'b11, dcpa[31:12]};
 			if(dcwrite && dccache) begin
-				pos = {dcva[2:0], 3'b000};
 				case(dcsz)
-				0: ddata[dcva[12:3]][56 - pos +: 8] <= dcwdata[7:0];
-				1: ddata[dcva[12:3]][48 - pos +: 16] <= dcwdata[15:0];
-				2: ddata[dcva[12:3]][40 - pos +: 24] <= dcwdata[23:0];
-				3: ddata[dcva[12:3]][32 - pos +: 32] <= dcwdata[31:0];
-				4: ddata[dcva[12:3]][24 - pos +: 40] <= dcwdata[39:0];
-				5: ddata[dcva[12:3]][16 - pos +: 48] <= dcwdata[47:0];
-				6: ddata[dcva[12:3]][8 - pos +: 56] <= dcwdata[55:0];
+				0: ddata[dcva[12:3]][off+: 8] <= dcwdata[7:0];
+				1: ddata[dcva[12:3]][off +: 16] <= dcwdata[15:0];
+				2: ddata[dcva[12:3]][off +: 24] <= dcwdata[23:0];
+				3: ddata[dcva[12:3]][off +: 32] <= dcwdata[31:0];
+				4: ddata[dcva[12:3]][off +: 40] <= dcwdata[39:0];
+				5: ddata[dcva[12:3]][off +: 48] <= dcwdata[47:0];
+				6: ddata[dcva[12:3]][off +: 56] <= dcwdata[55:0];
 				7: ddata[dcva[12:3]] <= dcwdata;
 				endcase
 				dtag[dcva[12:4]][20] <= 1;
 			end
 			if(icload) begin
-				idata[{pc[13:5], icctr}] <= extrdata;
-				itag[pc[13:5]] <= {1'b1, itlbpa[31:12]};
+				idata[{icva[13:5], icctr}] <= extrdata;
+				itag[icva[13:5]] <= {1'b1, icpa[31:12]};
 			end
+			if(icinval)
+				itag[icva[13:5]][20] <= 0;
+			if(icloadtag)
+				itag[icva[13:5]] <= {cp0taglo[7], cp0taglo[27:8]};
 			if(clricctr)
 				icctr <= 0;
 			if(incicctr)
@@ -181,6 +191,7 @@ module cache(
 		dcloadtag = 0;
 		dcdbe = 0;
 		cp0taglodcset = 0;
+		cp0tagloicset = 0;
 		case(dcstate)
 		DCIDLE: begin
 			dcbusy = 0;
@@ -250,6 +261,8 @@ module cache(
 				dcstate_ = DCWRITE2;
 		end
 		DCWRITE2: begin
+			dcextaddr = {dctag[19:0], dcva[11:4], 4'd8};
+			dcextsz = 15;
 			extwdata = dcdata;
 			dcextreq = 1;
 			dcextwr = 1;
@@ -311,6 +324,9 @@ module cache(
 		incicctr = 0;
 		icload = 0;
 		icbusy = 1;
+		icloadtag = 0;
+		cp0tagloicset = 0;
+		icinval = 0;
 		case(icstate)
 		ICIDLE: begin
 			icbusy = 0;
@@ -319,9 +335,22 @@ module cache(
 					icstate_ = ICREAD;
 				else
 					icstate_ = ICREADU;
+			else if(icdoop)
+				case(dcop)
+				0:
+					icinval = 1;
+				1:
+					icloadtag = 1;
+				2:
+					cp0tagloicset = 1;
+				4:
+					icinval = ictag[19:0] == icpa[31:12];
+				5:
+					icstate_ = ICREAD;
+				endcase
 		end
 		ICREAD: begin
-			icextaddr = itlbpa & ~31;
+			icextaddr = icpa & ~31;
 			icextreq = 1;
 			if(icextrdy) begin
 				icstate_ = ICRECV;
@@ -336,7 +365,7 @@ module cache(
 					icstate_ = ICIDLE;
 			end
 		ICREADU: begin
-			icextaddr = itlbpa;
+			icextaddr = icpa;
 			icextreq = 1;
 			icextsz = 3;
 			if(icextrdy)
